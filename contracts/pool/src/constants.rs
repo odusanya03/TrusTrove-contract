@@ -8,7 +8,11 @@
 
 /// Minimum remaining ledgers before a storage entry is eligible for TTL
 /// extension.
-pub const TTL_THRESHOLD: u32 = 100;
+///
+/// Kept at 25% of `TTL_EXTEND_TO` so renewals happen well before expiry
+/// instead of in the final ledgers of the lifetime (a low threshold risks
+/// expiry during network congestion or when a contract sits idle).
+pub const TTL_THRESHOLD: u32 = 500_000;
 
 /// Number of ledgers a storage entry is extended to when refreshed.
 pub const TTL_EXTEND_TO: u32 = 2_000_000;

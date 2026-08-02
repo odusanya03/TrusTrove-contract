@@ -1748,27 +1748,46 @@ fn test_fund_invoice_succeeds_when_no_prior_funded_entry() {
 // ============== ISSUE #281: INSTANCE TTL EXTENSION ==============
 
 // Every state-changing entrypoint must extend the contract's instance TTL so
-// an active pool never expires. New instance storage entries start with a
-// small default ttl (well above the extend_ttl threshold), so the
-// initialize()/set_max_utilization() calls in `setup()` are no-ops for the
-// ttl bump. Drive the ttl down below the threshold here, then confirm a
+// an active pool never expires. Because setup() runs initialize() and
+// set_max_utilization(), the instance TTL is already bumped up close to
+// EXTEND_TO. Drive the ttl down below the threshold here, then confirm a
 // state-changing call (deposit) bumps it back up close to the configured
 // extend-to window.
 #[test]
 fn test_deposit_extends_instance_ttl_when_below_threshold() {
     let te = setup();
 
-    let start_seq = te.env.ledger().sequence();
-    // The instance starts with the network's default minimum entry ttl
-    // (4096 ledgers). Move just past that so the remaining ttl drops below
-    // the extend_ttl threshold (100 ledgers), while the entry is still live.
-    te.env.ledger().set_sequence_number(start_seq + 4000);
+    // The mock token's balances and instance start with a small default ttl,
+    // so refresh them to survive the large ledger jump below (the jump that
+    // drains the pool's 2_000_000-ledger instance ttl would otherwise archive
+    // the token and break the transfer inside deposit()).
+    te.env.as_contract(&te.usdc_id, || {
+        te.env
+            .storage()
+            .instance()
+            .extend_ttl(TTL_THRESHOLD, TTL_EXTEND_TO);
+        te.env.storage().persistent().extend_ttl(
+            &TKey(te.lp.clone()),
+            TTL_THRESHOLD,
+            TTL_EXTEND_TO,
+        );
+    });
+
+    // Record the current instance TTL, then advance the ledger so the
+    // remaining TTL drops below the extend_ttl threshold while the entry is
+    // still live.
+    let ttl_before_drain: u32 = te
+        .env
+        .as_contract(&te.pool_id, || te.env.storage().instance().get_ttl());
+    te.env
+        .ledger()
+        .set_sequence_number(te.env.ledger().sequence() + ttl_before_drain - 50);
 
     let ttl_before = te
         .env
         .as_contract(&te.pool_id, || te.env.storage().instance().get_ttl());
     assert!(
-        ttl_before < 100,
+        ttl_before < TTL_THRESHOLD,
         "test setup should place ttl below the extend threshold, got {ttl_before}"
     );
 
